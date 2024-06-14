@@ -1,0 +1,31 @@
+{
+  "name": "js-mermaid-builder",
+  "version": "1.0.0",
+  "description": "MermaidJS markup programmatic builder",
+  "main": "dist/bundle.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/romaninozemtsev/js-mermaid-builder.git"
+  },
+  "keywords": [
+    "mermaidjs",
+    "diagrams"
+  ],
+  "author": "Roman Inozemtsev",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/romaninozemtsev/js-mermaid-builder/issues"
+  },
+  "homepage": "https://github.com/romaninozemtsev/js-mermaid-builder#readme",
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.14.2",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.4",
+    "typescript": "^5.4.5"
+  }
+}
