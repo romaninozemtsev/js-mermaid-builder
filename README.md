@@ -29,7 +29,6 @@ link.style = new LinkStyle({
 chart.addLink(link);
 
 const subgraph = new Subgraph('My Subgraph', ChartDir.LR);
-// @ts-ignore
 subgraph.addNode(new ChartNode('i am a node inside subgraph'));
 
 const subgraph2 = new Subgraph('subgraph2', ChartDir.LR);
@@ -44,7 +43,6 @@ subgraph.addSubgraph(subgraph2);
 chart.addSubgraph(subgraph);
 
 chart.addClassDef(new ClassDef(['class1'], 'fill:#f9f,stroke:#333,stroke-width:2px;'));
-// @ts-ignore
 chart.addClassDef(new ClassDef(['class2'], new NodeStyle({
     fill: '#300',
     stroke: '#666',
@@ -53,14 +51,11 @@ chart.addClassDef(new ClassDef(['class2'], new NodeStyle({
     strokeDasharray: [5, 5]
 })));
 
-// @ts-ignore
 chart.attachClass(sn2, 'class1');
 chart.attachClass(['my-node'], 'class1');
 chart.attachClass(node2, 'class2');
 
-// @ts-ignore
 chart.addLinkBetween(node1, subgraph2.getId());
-// @ts-ignore
 chart.addLinkStyle(2, new LinkStyle({
     color: 'green',
     strokeWidth: '2px'

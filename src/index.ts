@@ -10,7 +10,7 @@ enum NodeShape {
     RECT_ROUND = "(VAL)",
     STADIUM = "([VAL])",
     SUBROUTINE = "[[VAL]]",
-    CYLINDER = "[(VAL]]",
+    CYLINDER = "[(VAL)]",
     CIRCLE = "((VAL))",
     ASSYMETRIC = ">VAL]",
     RHOMBUS = "{VAL}",
@@ -127,9 +127,9 @@ class Link {
     dest: string | ChartNode;
     text?: string;
     type: LinkType;
-    style?: LinkStyle;
+    style?: string | LinkStyle;
 
-    constructor(src: string | ChartNode, dest: string | ChartNode, text?: string, type = LinkType.ARROW, style?: LinkStyle) {
+    constructor(src: string | ChartNode, dest: string | ChartNode, text?: string, type = LinkType.ARROW, style?: string | LinkStyle) {
         this.src = src;
         this.dest = dest;
         this.text = text;
@@ -145,7 +145,11 @@ class Link {
     }
 
     printStyle(linkCount: number): string {
-        return this.style ? `linkStyle ${linkCount} ${this.style.toString()};` : '';
+        if (!this.style) {
+            return '';
+        }
+        const style = typeof this.style === 'string' ? this.style : this.style.toString();
+        return `linkStyle ${linkCount} ${style};`;
     }
 }
 
@@ -178,11 +182,9 @@ class ClassAttachment {
         if (typeof this.nodes === 'string') {
             nodesArray = [this.nodes];
         } else if (this.nodes instanceof ChartNode) {
-            // @ts-ignore
             nodesArray = [this.nodes.getId()];
         } else {
-            // @ts-ignore
-            nodesArray = this.nodes.map(node => (typeof node === 'string' ? node : node.getId()));
+            nodesArray = this.nodes.map((node: string | ChartNode) => (typeof node === 'string' ? node : node.getId()));
         }
         return `class ${nodesArray.join(',')} ${this.className};`;
     }
@@ -210,24 +212,26 @@ class Chart {
     }
 
     toString(): string {
-        return this.print('', 0);
+        return this.print('', 0).text;
     }
 
-    private printBody(indent: string, linkCount: number): string {
+    protected printBody(indent: string, linkCount: number): { text: string; nextLinkCount: number } {
         const result: string[] = [];
+        let currentLinkCount = linkCount;
         for (const node of this.nodes) {
             result.push(indent + node.toString());
         }
         for (const link of this.links) {
             result.push(indent + link.toString());
             if (link.style) {
-                result.push(indent + link.printStyle(linkCount));
+                result.push(indent + link.printStyle(currentLinkCount));
             }
-            linkCount += 1;
+            currentLinkCount += 1;
         }
         for (const subgraph of this.subgraphs) {
-            // @ts-ignore
-            result.push(subgraph.print(indent, linkCount));
+            const subgraphResult = subgraph.print(indent, currentLinkCount);
+            result.push(subgraphResult.text);
+            currentLinkCount = subgraphResult.nextLinkCount;
         }
         for (const classDef of this.classDefs) {
             result.push(indent + classDef.toString());
@@ -236,12 +240,13 @@ class Chart {
             result.push(indent + classAttachment.toString());
         }
         for (const [linkPos, style] of this.positionalLinkStyles) {
-            result.push(indent + `linkStyle ${linkPos} ${style};`);
+            const normalizedStyle = typeof style === 'string' ? style : style.toString();
+            result.push(indent + `linkStyle ${linkPos} ${normalizedStyle};`);
         }
-        return result.join('\n');
+        return { text: result.join('\n'), nextLinkCount: currentLinkCount };
     }
 
-    private print(indent: string, linkCount: number): string {
+    print(indent: string, linkCount: number): { text: string; nextLinkCount: number } {
         const currentIndent = indent;
         const result: string[] = [];
         if (this.title) {
@@ -250,9 +255,10 @@ class Chart {
             result.push(`${currentIndent}---`);
         }
         result.push(`${currentIndent}flowchart ${this.direction}`);
-        result.push(this.printBody(currentIndent + '  ', linkCount));
+        const body = this.printBody(currentIndent + '  ', linkCount);
+        result.push(body.text);
         result.push('');
-        return result.join('\n');
+        return { text: result.join('\n'), nextLinkCount: body.nextLinkCount };
     }
 
     addNode(node: ChartNode | string): this {
@@ -292,8 +298,7 @@ class Chart {
 
     addLinkStyle(link: number | Link, style: string | LinkStyle): this {
         if (link instanceof Link) {
-            // @ts-ignore
-            link.style = typeof style === 'string' ? { stroke: style } : style;
+            link.style = style;
         } else {
             this.positionalLinkStyles.push([link, style]);
         }
@@ -306,31 +311,29 @@ class Chart {
     }
 }
 
-// @ts-ignore
 class Subgraph extends Chart {
     id?: string;
 
     toString(): string {
-        return this.print('', 0);
+        return this.print('', 0).text;
     }
 
-    private getId(): string {
+    getId(): string {
         if (!this.id) {
-            this.id = this.title ? this.title.replace(/[^a-zA-Z0-9\-_]+/g, '') : 'subgraph' + (Math.random() * 1000000);
+            this.id = this.title ? this.title.replace(/[^a-zA-Z0-9\-_]+/g, '') : 'subgraph' + Math.floor(Math.random() * 1000000);
         }
-        // @ts-ignore
         return this.id;
     }
 
-    private print(indent: string, linkCount: number): string {
+    print(indent: string, linkCount: number): { text: string; nextLinkCount: number } {
         const currentIndent = indent;
         const result: string[] = [];
         result.push(`${currentIndent}subgraph ${this.getId()} [${this.title || ''}]`);
         result.push(`${currentIndent}  direction ${this.direction}`);
-        // @ts-ignore
-        result.push(this.printBody(currentIndent + '  ', linkCount));
+        const body = this.printBody(currentIndent + '  ', linkCount);
+        result.push(body.text);
         result.push(`${indent}end`);
-        return result.join('\n');
+        return { text: result.join('\n'), nextLinkCount: body.nextLinkCount };
     }
 }
 
