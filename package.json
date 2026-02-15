@@ -2,7 +2,13 @@
   "name": "js-mermaid-builder",
   "version": "1.0.0",
   "description": "MermaidJS markup programmatic builder",
-  "main": "dist/bundle.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "jest"

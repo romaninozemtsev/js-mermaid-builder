@@ -14,7 +14,6 @@ describe('Chart Tests', () => {
         chart.addLink(link);
 
         const subgraph = new Subgraph('My Subgraph', ChartDir.LR);
-        // @ts-ignore
         subgraph.addNode(new ChartNode('i am a node inside subgraph'));
 
         const subgraph2 = new Subgraph('subgraph2', ChartDir.LR);
@@ -29,7 +28,6 @@ describe('Chart Tests', () => {
         chart.addSubgraph(subgraph);
 
         chart.addClassDef(new ClassDef(['class1'], 'fill:#f9f,stroke:#333,stroke-width:2px;'));
-        // @ts-ignore
         chart.addClassDef(new ClassDef(['class2'], new NodeStyle({
             fill: '#300',
             stroke: '#666',
@@ -38,14 +36,11 @@ describe('Chart Tests', () => {
             strokeDasharray: [5, 5]
         })));
 
-        // @ts-ignore
         chart.attachClass(sn2, 'class1');
         chart.attachClass(['my-node'], 'class1');
         chart.attachClass(node2, 'class2');
 
-        // @ts-ignore
         chart.addLinkBetween(node1, subgraph2.getId());
-        // @ts-ignore
         chart.addLinkStyle(2, new LinkStyle({
             color: 'green',
             strokeWidth: '2px'
@@ -106,4 +101,57 @@ flowchart TD
   
           expect(chart.toString()).toBe(expected);
       });
+
+    test('Link instance supports string styles', () => {
+        const chart = new Chart('style-as-string');
+        chart.addNode('a').addNode('b');
+
+        const link = new Link('a', 'b');
+        chart.addLink(link);
+        chart.addLinkStyle(link, 'stroke:#f00,stroke-width:3px');
+
+        const expected = `---
+title: style-as-string
+---
+flowchart TD
+  a(a)
+  b(b)
+  a --> b
+  linkStyle 0 stroke:#f00,stroke-width:3px;
+`;
+
+        expect(chart.toString()).toBe(expected);
+    });
+
+    test('Positional link styles stay stable with nested subgraphs', () => {
+        const chart = new Chart('nested-links');
+        chart.addNode('top-a').addNode('top-b');
+        chart.addLinkBetween('top-a', 'top-b');
+
+        const subgraph = new Subgraph('inner', ChartDir.LR);
+        const n1 = new ChartNode('inner-a');
+        const n2 = new ChartNode('inner-b');
+        subgraph.addNode(n1).addNode(n2).addLink(new Link(n1, n2));
+        chart.addSubgraph(subgraph);
+
+        chart.addLinkStyle(1, new LinkStyle({ color: 'green' }));
+
+        const expected = `---
+title: nested-links
+---
+flowchart TD
+  top-a(top-a)
+  top-b(top-b)
+  top-a --> top-b
+  subgraph inner [inner]
+    direction LR
+    inner-a(inner-a)
+    inner-b(inner-b)
+    inner-a --> inner-b
+  end
+  linkStyle 1 color:green;
+`;
+
+        expect(chart.toString()).toBe(expected);
+    });
 });
