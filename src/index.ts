@@ -211,6 +211,10 @@ class Chart {
         this.positionalLinkStyles = [];
     }
 
+    static parse(input: string): Chart {
+        return parseFlowchart(input);
+    }
+
     toString(): string {
         return this.print('', 0).text;
     }
@@ -337,4 +341,226 @@ class Subgraph extends Chart {
     }
 }
 
-export { Chart, ChartNode, Link, LinkType, LinkStyle, NodeStyle, NodeShape, ChartDir, Subgraph, ClassDef, ClassAttachment };
+interface ParseState {
+    nextLinkIndex: number;
+    linksByIndex: Map<number, Link>;
+    lastParsedLinkIndex?: number;
+}
+
+function parseFlowchart(input: string): Chart {
+    const lines = input.replace(/\r\n/g, '\n').split('\n');
+    let index = 0;
+    let title: string | undefined;
+
+    while (index < lines.length && lines[index].trim() === '') {
+        index += 1;
+    }
+
+    if (index < lines.length && lines[index].trim() === '---') {
+        index += 1;
+        while (index < lines.length && lines[index].trim() !== '---') {
+            const line = lines[index].trim();
+            const titleMatch = line.match(/^title:\s*(.*)$/);
+            if (titleMatch) {
+                title = titleMatch[1];
+            }
+            index += 1;
+        }
+        if (index >= lines.length || lines[index].trim() !== '---') {
+            throw new Error('Invalid mermaid frontmatter: missing closing ---');
+        }
+        index += 1;
+    }
+
+    while (index < lines.length && lines[index].trim() === '') {
+        index += 1;
+    }
+
+    if (index >= lines.length) {
+        throw new Error('Invalid mermaid flowchart: missing flowchart declaration');
+    }
+
+    const header = lines[index].trim();
+    const headerMatch = header.match(/^flowchart\s+(LR|TD|TB|RL|BT)$/);
+    if (!headerMatch) {
+        throw new Error(`Invalid flowchart declaration: "${header}"`);
+    }
+    const chart = new Chart(title, headerMatch[1] as ChartDir);
+    index += 1;
+
+    const state: ParseState = {
+        nextLinkIndex: 0,
+        linksByIndex: new Map<number, Link>()
+    };
+    const result = parseChartBody(lines, index, chart, state, false);
+    if (result.foundEndToken) {
+        throw new Error('Unexpected "end" at root level');
+    }
+    return chart;
+}
+
+function parseChartBody(
+    lines: string[],
+    startIndex: number,
+    chart: Chart,
+    state: ParseState,
+    stopOnEnd: boolean
+): { nextIndex: number; foundEndToken: boolean } {
+    let index = startIndex;
+    let lastStatementWasLink = false;
+
+    while (index < lines.length) {
+        const line = lines[index].trim();
+        if (!line) {
+            index += 1;
+            continue;
+        }
+
+        if (line === 'end') {
+            if (!stopOnEnd) {
+                return { nextIndex: index + 1, foundEndToken: true };
+            }
+            return { nextIndex: index + 1, foundEndToken: true };
+        }
+
+        const subgraphMatch = line.match(/^subgraph\s+([^\s\[]+)\s*(?:\[(.*)\])?$/);
+        if (subgraphMatch) {
+            const subgraphId = subgraphMatch[1];
+            const subgraphTitle = subgraphMatch[2] ?? '';
+            const subgraph = new Subgraph(subgraphTitle, ChartDir.TD);
+            subgraph.id = subgraphId;
+            index += 1;
+
+            while (index < lines.length && lines[index].trim() === '') {
+                index += 1;
+            }
+
+            if (index >= lines.length) {
+                throw new Error(`Subgraph "${subgraphId}" is missing direction and body`);
+            }
+
+            const directionLine = lines[index].trim();
+            const directionMatch = directionLine.match(/^direction\s+(LR|TD|TB|RL|BT)$/);
+            if (!directionMatch) {
+                throw new Error(`Subgraph "${subgraphId}" is missing a valid direction line`);
+            }
+            subgraph.direction = directionMatch[1] as ChartDir;
+            index += 1;
+
+            const nestedResult = parseChartBody(lines, index, subgraph, state, true);
+            if (!nestedResult.foundEndToken) {
+                throw new Error(`Subgraph "${subgraphId}" is missing closing "end"`);
+            }
+            chart.addSubgraph(subgraph);
+            index = nestedResult.nextIndex;
+            lastStatementWasLink = false;
+            continue;
+        }
+
+        const classDefMatch = line.match(/^classDef\s+([^\s]+)\s+(.+)$/);
+        if (classDefMatch) {
+            const classNames = classDefMatch[1].includes(',')
+                ? classDefMatch[1].split(',').map((item) => item.trim())
+                : classDefMatch[1];
+            chart.addClassDef(new ClassDef(classNames, classDefMatch[2].trim()));
+            index += 1;
+            lastStatementWasLink = false;
+            continue;
+        }
+
+        const classAttachmentMatch = line.match(/^class\s+([^\s]+)\s+([^\s;]+);?$/);
+        if (classAttachmentMatch) {
+            const nodes = classAttachmentMatch[1].split(',').map((item) => item.trim());
+            const className = classAttachmentMatch[2];
+            chart.attachClass(nodes.length === 1 ? nodes[0] : nodes, className);
+            index += 1;
+            lastStatementWasLink = false;
+            continue;
+        }
+
+        const linkStyleMatch = line.match(/^linkStyle\s+(\d+)\s+(.+);?$/);
+        if (linkStyleMatch) {
+            const linkIndex = Number.parseInt(linkStyleMatch[1], 10);
+            const style = linkStyleMatch[2].trim().replace(/;$/, '');
+            const link = state.linksByIndex.get(linkIndex);
+            if (lastStatementWasLink && state.lastParsedLinkIndex === linkIndex && link && !link.style) {
+                link.style = style;
+            } else {
+                chart.addLinkStyle(linkIndex, style);
+            }
+            index += 1;
+            lastStatementWasLink = false;
+            continue;
+        }
+
+        const linkMatch = line.match(/^([^\s]+)\s+(-->|---|~~~)\s*(?:\|([^|]+)\|)?\s*([^\s]+)$/);
+        if (linkMatch) {
+            const src = linkMatch[1];
+            const type = linkMatch[2] as LinkType;
+            const text = linkMatch[3];
+            const dest = linkMatch[4];
+            const link = new Link(src, dest, text, type);
+            chart.addLink(link);
+            state.linksByIndex.set(state.nextLinkIndex, link);
+            state.lastParsedLinkIndex = state.nextLinkIndex;
+            state.nextLinkIndex += 1;
+            index += 1;
+            lastStatementWasLink = true;
+            continue;
+        }
+
+        const node = parseNodeLine(line);
+        if (node) {
+            chart.addNode(node);
+            index += 1;
+            lastStatementWasLink = false;
+            continue;
+        }
+
+        throw new Error(`Unsupported mermaid line: "${line}"`);
+    }
+
+    return { nextIndex: index, foundEndToken: false };
+}
+
+function parseNodeLine(line: string): ChartNode | null {
+    let nodeContent = line;
+    let className: string | undefined;
+    const classSeparator = line.lastIndexOf(':::');
+    if (classSeparator >= 0) {
+        nodeContent = line.slice(0, classSeparator);
+        className = line.slice(classSeparator + 3).trim();
+        if (!className) {
+            return null;
+        }
+    }
+    const idMatch = nodeContent.match(/^([a-zA-Z0-9\-_!#$]+)(.+)$/);
+    if (!idMatch) {
+        return null;
+    }
+
+    const id = idMatch[1];
+    const rest = idMatch[2];
+
+    const shapeCandidates: Array<{ shape: NodeShape; regex: RegExp }> = [
+        { shape: NodeShape.HEXAGON, regex: /^\{\{([\s\S]*)\}\}$/ },
+        { shape: NodeShape.CIRCLE, regex: /^\(\(([\s\S]*)\)\)$/ },
+        { shape: NodeShape.SUBROUTINE, regex: /^\[\[([\s\S]*)\]\]$/ },
+        { shape: NodeShape.CYLINDER, regex: /^\[\(([\s\S]*)\)\]$/ },
+        { shape: NodeShape.STADIUM, regex: /^\(\[([\s\S]*)\]\)$/ },
+        { shape: NodeShape.RHOMBUS, regex: /^\{([\s\S]*)\}$/ },
+        { shape: NodeShape.RECT_ROUND, regex: /^\(([\s\S]*)\)$/ },
+        { shape: NodeShape.ASSYMETRIC, regex: /^>([\s\S]*)\]$/ }
+    ];
+
+    for (const candidate of shapeCandidates) {
+        const match = rest.match(candidate.regex);
+        if (match) {
+            return new ChartNode(match[1], candidate.shape, id, className);
+        }
+    }
+
+    return null;
+}
+
+export { Chart, ChartNode, Link, LinkType, LinkStyle, NodeStyle, NodeShape, ChartDir, Subgraph, ClassDef, ClassAttachment, parseFlowchart };
